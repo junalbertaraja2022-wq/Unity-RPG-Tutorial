@@ -1,3 +1,4 @@
+// TurnManager.cs
 using System;
 using UnityEngine;
 
@@ -8,15 +9,15 @@ public class TurnManager : MonoBehaviour
     public int maxTurns = 100; // Optional: limit total turns
     public bool isPlayerTurn = true;
     
-    [Header("Action Points")]
-    public int maxActionPoints = 3;
+   [Header("Action Points")]
+    public int maxActionPoints = 2; // Reduced from 3
     public int currentActionPoints = 3;
     
     // Events for turn changes
     public event Action OnPlayerTurnStart;
     public event Action OnEnemyTurnStart;
     public event Action OnTurnEnd;
-    public event System.Action OnTick; // ADDED: Event for each tick
+    public event Action OnTick; // ADDED: Event for each tick
     
     // Singleton pattern for easy access
     public static TurnManager Instance { get; private set; }

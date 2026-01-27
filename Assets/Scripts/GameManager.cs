@@ -1,3 +1,4 @@
+// GameManager.cs
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -15,10 +16,11 @@ public class GameManager : MonoBehaviour
     public bool spawnPlayerOnStart = true;
     public Vector2Int playerSpawnCell = new Vector2Int(1, 1);
     
+   // In GameManager Inspector:
     [Header("Resource Settings")]
-    public int startingFood = 100;
-    public int foodPerTurn = 10;
-    public int foodConsumptionRate = 5;
+    public int startingFood = 50;    // Reduced from 100
+    public int foodPerTurn = 0;      // Reduced from 10
+    public int foodConsumptionRate = 5; // Keep at 5
     
     // Private integer member that stores how much food you currently have
     private int currentFood;
@@ -97,14 +99,6 @@ public class GameManager : MonoBehaviour
         else
         {
             Debug.LogError("GameManager: TurnManager not found! Cannot register OnTurnHappen");
-        }
-        
-        // Register to other turn events as well (optional)
-        if (turnManager != null)
-        {
-            turnManager.OnPlayerTurnStart += OnPlayerTurnStart;
-            turnManager.OnEnemyTurnStart += OnEnemyTurnStart;
-            turnManager.OnTurnEnd += OnTurnEnd;
         }
         
         // Only spawn if everything is ready
@@ -186,19 +180,6 @@ public class GameManager : MonoBehaviour
         foodLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
         foodLabel.style.color = Color.white;
         
-        // REMOVED: Background color styling
-        // foodLabel.style.backgroundColor = new Color(0, 0, 0, 0.7f);
-        // foodLabel.style.paddingLeft = 10;
-        // foodLabel.style.paddingRight = 10;
-        // foodLabel.style.paddingTop = 5;
-        // foodLabel.style.paddingBottom = 5;
-        // foodLabel.style.marginTop = 10;
-        // foodLabel.style.marginLeft = 10;
-        // foodLabel.style.borderTopLeftRadius = 5;
-        // foodLabel.style.borderTopRightRadius = 5;
-        // foodLabel.style.borderBottomLeftRadius = 5;
-        // foodLabel.style.borderBottomRightRadius = 5;
-        
         // Add to root
         root.Add(foodLabel);
     }
@@ -209,9 +190,6 @@ public class GameManager : MonoBehaviour
         if (turnManager != null)
         {
             turnManager.OnTick -= OnTurnHappen;
-            turnManager.OnPlayerTurnStart -= OnPlayerTurnStart;
-            turnManager.OnEnemyTurnStart -= OnEnemyTurnStart;
-            turnManager.OnTurnEnd -= OnTurnEnd;
         }
         
         // Unsubscribe from food change event
@@ -227,9 +205,6 @@ public class GameManager : MonoBehaviour
         
         // Update food resources
         UpdateFood();
-        
-        // Check game conditions
-        CheckGameConditions();
     }
     
     /// <summary>
@@ -290,18 +265,6 @@ public class GameManager : MonoBehaviour
         if (foodLabel != null)
         {
             foodLabel.text = $"Food: {foodAmount}";
-            
-            // Optional: Add visual feedback when food changes
-            if (foodAmount < currentFood)
-            {
-                // Food decreased - show red flash
-                StartCoroutine(FlashLabelColor(Color.red, 0.3f));
-            }
-            else if (foodAmount > currentFood)
-            {
-                // Food increased - show green flash
-                StartCoroutine(FlashLabelColor(Color.green, 0.3f));
-            }
         }
         else
         {
@@ -310,36 +273,10 @@ public class GameManager : MonoBehaviour
     }
     
     /// <summary>
-    /// Coroutine to flash the label color
-    /// </summary>
-    System.Collections.IEnumerator FlashLabelColor(Color flashColor, float duration)
-    {
-        if (foodLabel == null) yield break;
-        
-        Color originalColor = foodLabel.style.color.value;
-        foodLabel.style.color = flashColor;
-        
-        yield return new WaitForSeconds(duration);
-        
-        if (foodLabel != null)
-        {
-            // Return to appropriate color based on food level
-            if (currentFood <= 10)
-                foodLabel.style.color = Color.red;
-            else if (currentFood <= 20)
-                foodLabel.style.color = Color.yellow;
-            else
-                foodLabel.style.color = originalColor;
-        }
-    }
-    
-    /// <summary>
     /// Updates the food display in the UI (legacy method, kept for compatibility)
     /// </summary>
     void UpdateFoodUI()
     {
-        // This method is kept for compatibility with existing code
-        // It now just triggers the event
         OnFoodChanged?.Invoke(currentFood);
     }
     
@@ -358,78 +295,8 @@ public class GameManager : MonoBehaviour
             foodLabel.style.fontSize = 24;
         }
         
-        // Implement game over logic
         Debug.Log("Game Over! Restarting game...");
-        Invoke(nameof(RestartGame), 2f); // Restart after 2 seconds
-    }
-    
-    /// <summary>
-    /// Checks various game conditions each turn
-    /// </summary>
-    void CheckGameConditions()
-    {
-        // Check win condition (example: reach a certain turn)
-        if (turnManager != null && turnManager.currentTurn >= 10)
-        {
-            Debug.Log("Congratulations! You survived 10 turns!");
-            
-            // Update UI to show victory
-            if (foodLabel != null)
-            {
-                foodLabel.text = "VICTORY! Survived 10 turns!";
-                foodLabel.style.color = Color.green;
-            }
-        }
-        
-        // Check if player is still alive
-        if (playerController == null)
-        {
-            Debug.LogError("Player is dead! Game over.");
-            
-            if (foodLabel != null)
-            {
-                foodLabel.text = "GAME OVER - Player Died!";
-                foodLabel.style.color = Color.red;
-            }
-            
-            RestartGame();
-        }
-    }
-    
-    /// <summary>
-    /// Event handler for player turn start
-    /// </summary>
-    void OnPlayerTurnStart()
-    {
-        Debug.Log("GameManager: Player turn started");
-        
-        // REMOVED: Background color change for player turn
-        // if (foodLabel != null)
-        // {
-        //     foodLabel.style.backgroundColor = new Color(0, 0.3f, 0, 0.7f);
-        // }
-    }
-    
-    /// <summary>
-    /// Event handler for enemy turn start
-    /// </summary>
-    void OnEnemyTurnStart()
-    {
-        Debug.Log("GameManager: Enemy turn started");
-        
-        // REMOVED: Background color change for enemy turn
-        // if (foodLabel != null)
-        // {
-        //     foodLabel.style.backgroundColor = new Color(0.3f, 0, 0, 0.7f);
-        // }
-    }
-    
-    /// <summary>
-    /// Event handler for turn end
-    /// </summary>
-    void OnTurnEnd()
-    {
-        Debug.Log("GameManager: Turn ended");
+        Invoke(nameof(RestartGame), 2f);
     }
     
     /// <summary>
@@ -438,24 +305,32 @@ public class GameManager : MonoBehaviour
     public void AddFood(int amount)
     {
         int oldFood = currentFood;
-        currentFood -= amount;
+        currentFood += amount;
         Debug.Log($"Added {amount} food. Total: {currentFood}");
         
-        
+        if (oldFood != currentFood)
+        {
+            OnFoodChanged?.Invoke(currentFood);
+        }
     }
     
     /// <summary>
-    /// Consumes food from the player's resources
+    /// Consumes food from the player's resources - FIXED VERSION
     /// </summary>
     public bool ConsumeFood(int amount)
     {
-        if (currentFood <= amount)
+        // FIXED: Check if we have enough food BEFORE consuming
+        if (currentFood >= amount)
         {
             int oldFood = currentFood;
             currentFood -= amount;
             Debug.Log($"Consumed {amount} food. Remaining: {currentFood}");
             
-           
+            if (oldFood != currentFood)
+            {
+                OnFoodChanged?.Invoke(currentFood);
+            }
+            return true;
         }
         
         Debug.LogWarning($"Not enough food to consume {amount}. Current: {currentFood}");
@@ -478,7 +353,10 @@ public class GameManager : MonoBehaviour
         int oldFood = currentFood;
         currentFood = Mathf.Max(0, amount);
         
-        Debug.Log($"GameManager: Current food set to {currentFood}");
+        if (oldFood != currentFood)
+        {
+            OnFoodChanged?.Invoke(currentFood);
+        }
     }
     
     /// <summary>
@@ -510,8 +388,6 @@ public class GameManager : MonoBehaviour
             foodLabel.text = $"Food: {currentFood}";
             foodLabel.style.color = Color.white;
             foodLabel.style.fontSize = 20;
-            // REMOVED: Background color reset
-            // foodLabel.style.backgroundColor = new Color(0, 0, 0, 0.7f);
         }
         
         Debug.Log("Game restarted!");
@@ -535,12 +411,6 @@ public class GameManager : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.C))
         {
             ConsumeFood(30);
-        }
-        
-        // Example: Display current food with Space key (for debugging)
-        if (Input.GetKeyDown(KeyCode.Space))
-        {
-            Debug.Log($"Current food: {currentFood}");
         }
     }
 }

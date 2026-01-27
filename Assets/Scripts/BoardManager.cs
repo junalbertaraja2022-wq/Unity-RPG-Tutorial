@@ -3,12 +3,6 @@ using UnityEngine.Tilemaps;
 
 public class BoardManager : MonoBehaviour
 {
-    [System.Serializable]
-    public class CellData
-    {
-        public bool Passable;
-    }
-
     private CellData[,] m_BoardData;
     private Tilemap m_Tilemap;
     private Grid m_Grid;
@@ -21,24 +15,33 @@ public class BoardManager : MonoBehaviour
     public Tile[] GroundTiles;
     public Tile[] WallTiles;
     
+    [Header("Wall Settings")]
+    public GameObject WallPrefab;
+    public int minWalls = 3;
+    public int maxWalls = 7;
+    
+    [Header("Food Settings")]
+    public GameObject FoodPrefab;
+    public int foodCount = 5;
+    
     [Header("Camera Settings")]
     public Camera mainCamera;
-    public float padding = 1f; // Padding around grid in world units
+    public float padding = 1f;
     
     [Header("Board Offset")]
-    public Vector2Int boardOffset = Vector2Int.zero; // For centering the board
+    public Vector2Int boardOffset = Vector2Int.zero;
 
-    // Start is called before the first frame update
     void Start()
     {
         InitializeComponents();
         GenerateBoard();
-        CenterCamera();
+        GenerateWalls();
+        GenerateFood();
+       // CenterCamera();
     }
 
-    public void InitializeComponents()
+    void InitializeComponents()
     {
-        // Get or create tilemap
         m_Tilemap = GetComponentInChildren<Tilemap>();
         if (m_Tilemap == null)
         {
@@ -48,7 +51,6 @@ public class BoardManager : MonoBehaviour
             tilemapObj.AddComponent<TilemapRenderer>();
         }
 
-        // Get grid component
         m_Grid = GetComponentInChildren<Grid>();
         if (m_Grid == null)
         {
@@ -61,23 +63,17 @@ public class BoardManager : MonoBehaviour
             }
         }
 
-        // Get main camera if not assigned
         if (mainCamera == null)
             mainCamera = Camera.main;
     }
 
     void GenerateBoard()
     {
-        // Clear existing tiles
         m_Tilemap.ClearAllTiles();
-
-        // Initialize board data
         m_BoardData = new CellData[Width, Height];
-
-        // Calculate offset to center the board
+        
         boardOffset = new Vector2Int(-Width / 2, -Height / 2);
-
-        // If dimensions are even, adjust to center properly
+        
         if (Width % 2 == 0) boardOffset.x += 1;
         if (Height % 2 == 0) boardOffset.y += 1;
 
@@ -93,15 +89,10 @@ public class BoardManager : MonoBehaviour
                 {
                     tile = WallTiles[Random.Range(0, WallTiles.Length)];
                     m_BoardData[x, y].Passable = false;
-
-                    // Set collider type for impassable tiles
-                    if (tile != null)
+                    
+                    if (tile != null && tile.colliderType == Tile.ColliderType.None)
                     {
-                        // Ensure the wall tile has a collider
-                        if (tile.colliderType == Tile.ColliderType.None)
-                        {
-                            tile.colliderType = Tile.ColliderType.Grid;
-                        }
+                        tile.colliderType = Tile.ColliderType.Grid;
                     }
                 }
                 else
@@ -110,7 +101,6 @@ public class BoardManager : MonoBehaviour
                     m_BoardData[x, y].Passable = true;
                 }
 
-                // Calculate position with offset for centering
                 Vector3Int tilePosition = new Vector3Int(
                     boardOffset.x + x,
                     boardOffset.y + y,
@@ -118,8 +108,7 @@ public class BoardManager : MonoBehaviour
                 );
 
                 m_Tilemap.SetTile(tilePosition, tile);
-
-                // Ensure collider is set for wall tiles
+                
                 if (!m_BoardData[x, y].Passable)
                 {
                     m_Tilemap.SetColliderType(tilePosition, Tile.ColliderType.Grid);
@@ -127,20 +116,156 @@ public class BoardManager : MonoBehaviour
             }
         }
 
-        // Add TilemapCollider2D for physics if not present
+        AddCollisionComponents();
+    }
+    
+    void GenerateWalls()
+    {
+        if (WallPrefab == null)
+        {
+            Debug.LogError("BoardManager: WallPrefab is not assigned!");
+            return;
+        }
+        
+        int wallCount = Random.Range(minWalls, maxWalls + 1);
+        Debug.Log($"Generating {wallCount} walls...");
+        
+        int wallsPlaced = 0;
+        int maxAttempts = 200;
+        
+        for (int i = 0; i < wallCount; ++i)
+        {
+            int attempts = 0;
+            bool wallPlaced = false;
+            
+            while (attempts < maxAttempts && !wallPlaced)
+            {
+                // Get random position inside playable area
+                int randomX = Random.Range(1, Width - 1);
+                int randomY = Random.Range(1, Height - 1);
+                
+                CellData data = m_BoardData[randomX, randomY];
+                
+                // Check if cell is passable and doesn't already have an object
+                if (data.Passable && data.ContainedObject == null)
+                {
+                    // Don't place walls too close to spawn (1,1)
+                    float distanceToSpawn = Vector2Int.Distance(new Vector2Int(randomX, randomY), new Vector2Int(1, 1));
+                    if (distanceToSpawn < 2f) // Minimum 2 cells away from spawn
+                    {
+                        attempts++;
+                        continue;
+                    }
+                    
+                    // Create wall object
+                    GameObject newWall = Instantiate(WallPrefab);
+                    
+                    // Position it at the center of the cell
+                    Vector3 worldPos = GetCellWorldPosition(randomX, randomY);
+                    newWall.transform.position = worldPos;
+                    
+                    // Set parent for organization
+                    newWall.transform.SetParent(transform);
+                    
+                    // Add WallController component if not present
+                    WallController wallController = newWall.GetComponent<WallController>();
+                    if (wallController == null)
+                    {
+                        wallController = newWall.AddComponent<WallController>();
+                    }
+                    
+                    // Initialize wall with its grid position
+                    wallController.Initialize(this, new Vector2Int(randomX, randomY));
+                    
+                    // Store reference in cell data
+                    data.ContainedObject = newWall;
+                    
+                    // Mark cell as impassable
+                    data.Passable = false;
+                    
+                    wallsPlaced++;
+                    wallPlaced = true;
+                    Debug.Log($"Wall placed at cell ({randomX}, {randomY})");
+                }
+                
+                attempts++;
+            }
+            
+            if (!wallPlaced)
+            {
+                Debug.LogWarning($"Could not place wall {i + 1} after {maxAttempts} attempts");
+            }
+        }
+        
+        Debug.Log($"Successfully placed {wallsPlaced}/{wallCount} walls");
+    }
+    
+    void GenerateFood()
+    {
+        if (FoodPrefab == null)
+        {
+            Debug.LogError("BoardManager: FoodPrefab is not assigned!");
+            return;
+        }
+        
+        Debug.Log($"Generating {foodCount} food items...");
+        
+        int foodPlaced = 0;
+        int maxAttempts = 100;
+        
+        for (int i = 0; i < foodCount; ++i)
+        {
+            int attempts = 0;
+            bool foodPlacedThisIteration = false;
+            
+            while (attempts < maxAttempts && !foodPlacedThisIteration)
+            {
+                int randomX = Random.Range(1, Width - 1);
+                int randomY = Random.Range(1, Height - 1);
+                
+                CellData data = m_BoardData[randomX, randomY];
+                
+                // Check if cell is passable and doesn't already have an object
+                if (data.Passable && data.ContainedObject == null)
+                {
+                    GameObject newFood = Instantiate(FoodPrefab);
+                    Vector3 worldPos = GetCellWorldPosition(randomX, randomY);
+                    newFood.transform.position = worldPos;
+                    newFood.transform.SetParent(transform);
+                    
+                    // Add FoodCollectible component if not present
+                    FoodCollectible foodCollectible = newFood.GetComponent<FoodCollectible>();
+                    if (foodCollectible == null)
+                    {
+                        foodCollectible = newFood.AddComponent<FoodCollectible>();
+                    }
+                    
+                    data.ContainedObject = newFood;
+                    foodPlaced++;
+                    foodPlacedThisIteration = true;
+                }
+                
+                attempts++;
+            }
+        }
+        
+        Debug.Log($"Successfully placed {foodPlaced}/{foodCount} food items");
+    }
+    
+    void AddCollisionComponents()
+    {
         TilemapCollider2D tilemapCollider = m_Tilemap.GetComponent<TilemapCollider2D>();
         if (tilemapCollider == null)
         {
             tilemapCollider = m_Tilemap.gameObject.AddComponent<TilemapCollider2D>();
-
-            // Optional: Add CompositeCollider2D for better performance
+            
             Rigidbody2D rb = m_Tilemap.gameObject.GetComponent<Rigidbody2D>();
             if (rb == null)
             {
                 rb = m_Tilemap.gameObject.AddComponent<Rigidbody2D>();
                 rb.bodyType = RigidbodyType2D.Static;
             }
-
+            
             CompositeCollider2D compositeCollider = m_Tilemap.gameObject.GetComponent<CompositeCollider2D>();
             if (compositeCollider == null)
             {
@@ -148,6 +273,22 @@ public class BoardManager : MonoBehaviour
                 tilemapCollider.compositeOperation = Collider2D.CompositeOperation.Merge;
             }
         }
+    }
+    
+    // ... (Rest of your BoardManager methods like CenterCamera, GetCellWorldPosition, etc.)
+
+    // Public methods
+    public bool IsCellPassable(int x, int y)
+    {
+        if (x < 0 || x >= Width || y < 0 || y >= Height)
+            return false;
+        
+        return m_BoardData[x, y].Passable;
+    }
+    
+    public bool IsCellPassable(Vector2Int cell)
+    {
+        return IsCellPassable(cell.x, cell.y);
     }
     
     public CellData GetCellData(int x, int y)
@@ -162,111 +303,21 @@ public class BoardManager : MonoBehaviour
     {
         return GetCellData(cell.x, cell.y);
     }
-
-    void CenterCamera()
+    
+    public void ClearCellObject(int x, int y)
     {
-        if (mainCamera == null)
-        {
-            Debug.LogError("Main camera is not assigned!");
-            return;
-        }
-
-        // Calculate board center in world coordinates
-        Vector3 boardCenterWorld = CalculateBoardCenterWorld();
-        
-        // Calculate board size in world units
-        Vector2 boardSizeWorld = CalculateBoardSizeWorld();
-        
-        // Center camera on board
-        if (mainCamera.orthographic)
-        {
-            CenterOrthographicCamera(boardCenterWorld, boardSizeWorld);
-        }
-        else
-        {
-            CenterPerspectiveCamera(boardCenterWorld, boardSizeWorld);
-        }
-        
-        Debug.Log($"Camera centered. Board center: {boardCenterWorld}, Board size: {boardSizeWorld}");
-    }
-
-    Vector3 CalculateBoardCenterWorld()
-    {
-        // Get the world position of the center cell
-        Vector3Int centerCell = new Vector3Int(
-            boardOffset.x + Width / 2,
-            boardOffset.y + Height / 2,
-            0
-        );
-        
-        return m_Tilemap.CellToWorld(centerCell) + new Vector3(0.5f, 0.5f, 0);
-    }
-
-    Vector2 CalculateBoardSizeWorld()
-    {
-        // Calculate board size based on grid cell size
-        Vector3 cellSize = m_Grid.cellSize;
-        return new Vector2(Width * cellSize.x, Height * cellSize.y);
-    }
-
-    void CenterOrthographicCamera(Vector3 boardCenterWorld, Vector2 boardSizeWorld)
-    {
-        // Calculate required camera size to fit the entire board
-        float screenRatio = (float)Screen.width / Screen.height;
-        float boardRatio = boardSizeWorld.x / boardSizeWorld.y;
-        
-        float requiredSize;
-        if (screenRatio >= boardRatio)
-        {
-            // Screen is wider than board (height is limiting)
-            requiredSize = boardSizeWorld.y * 0.5f + padding;
-        }
-        else
-        {
-            // Board is wider than screen (width is limiting)
-            requiredSize = (boardSizeWorld.x / screenRatio) * 0.5f + padding;
-        }
-        
-        // Set camera properties
-        mainCamera.orthographicSize = requiredSize;
-        mainCamera.transform.position = new Vector3(
-            boardCenterWorld.x,
-            boardCenterWorld.y,
-            mainCamera.transform.position.z
-        );
-    }
-
-    void CenterPerspectiveCamera(Vector3 boardCenterWorld, Vector2 boardSizeWorld)
-    {
-        // For perspective camera, calculate distance needed to see entire board
-        float distance = Mathf.Max(
-            boardSizeWorld.x * 0.5f / Mathf.Tan(mainCamera.fieldOfView * 0.5f * Mathf.Deg2Rad),
-            boardSizeWorld.y * 0.5f / Mathf.Tan(mainCamera.fieldOfView * 0.5f * Mathf.Deg2Rad)
-        ) + padding;
-        
-        mainCamera.transform.position = new Vector3(
-            boardCenterWorld.x,
-            boardCenterWorld.y,
-            -distance
-        );
-    }
-
-    // Public methods for other scripts to use
-
-    public bool IsCellPassable(int x, int y)
-    {
-        // Check bounds
         if (x < 0 || x >= Width || y < 0 || y >= Height)
-            return false;
+            return;
         
-        return m_BoardData[x, y].Passable;
+        m_BoardData[x, y].ContainedObject = null;
+        m_BoardData[x, y].Passable = true; // Make cell passable after object is cleared
     }
-
-    public bool IsCellPassable(Vector2Int cell)
+    
+    public void ClearCellObject(Vector2Int cell)
     {
-        return IsCellPassable(cell.x, cell.y);
+        ClearCellObject(cell.x, cell.y);
     }
-
+    
     public Vector3 GetCellWorldPosition(int x, int y)
     {
         Vector3Int gridPosition = new Vector3Int(
@@ -278,12 +329,12 @@ public class BoardManager : MonoBehaviour
         // Return center of the cell
         return m_Tilemap.CellToWorld(gridPosition) + new Vector3(0.5f, 0.5f, 0);
     }
-
+    
     public Vector3 GetCellWorldPosition(Vector2Int cell)
     {
         return GetCellWorldPosition(cell.x, cell.y);
     }
-
+    
     public Vector2Int WorldToCell(Vector3 worldPosition)
     {
         Vector3Int gridPosition = m_Tilemap.WorldToCell(worldPosition);
@@ -292,61 +343,18 @@ public class BoardManager : MonoBehaviour
             gridPosition.y - boardOffset.y
         );
     }
-
-    public Vector2Int GetBoardOffset()
+    
+    public int GetBoardWidth() => Width;
+    public int GetBoardHeight() => Height;
+    
+    // Method to make wall cell passable after destruction
+    public void DestroyWallAtCell(Vector2Int cell)
     {
-        return boardOffset;
-    }
-
-    public int GetBoardWidth()
-    {
-        return Width;
-    }
-
-    public int GetBoardHeight()
-    {
-        return Height;
-    }
-
-    // Editor method to regenerate board (optional)
-    #if UNITY_EDITOR
-    [ContextMenu("Regenerate Board")]
-    void RegenerateBoard()
-    {
-        InitializeComponents();
-        GenerateBoard();
-        CenterCamera();
-    }
-    #endif
-
-    // Draw gizmos in editor to visualize board bounds
-    void OnDrawGizmosSelected()
-    {
-        if (m_Tilemap == null || m_BoardData == null) return;
-        
-        // Draw board bounds
-        Gizmos.color = Color.yellow;
-        
-        Vector3 bottomLeft = GetCellWorldPosition(0, 0) - new Vector3(0.5f, 0.5f, 0);
-        Vector3 topRight = GetCellWorldPosition(Width - 1, Height - 1) + new Vector3(0.5f, 0.5f, 0);
-        
-        Vector3 size = topRight - bottomLeft;
-        Vector3 center = bottomLeft + size * 0.5f;
-        
-        Gizmos.DrawWireCube(center, new Vector3(size.x, size.y, 0.1f));
-        
-        // Draw impassable cells in red
-        Gizmos.color = Color.red;
-        for (int y = 0; y < Height; y++)
+        CellData data = GetCellData(cell);
+        if (data != null && data.HasWall)
         {
-            for (int x = 0; x < Width; x++)
-            {
-                if (!m_BoardData[x, y].Passable)
-                {
-                    Vector3 cellCenter = GetCellWorldPosition(x, y);
-                    Gizmos.DrawWireCube(cellCenter, new Vector3(0.8f, 0.8f, 0.1f));
-                }
-            }
+            ClearCellObject(cell);
+            Debug.Log($"Wall destroyed at cell {cell}. Cell is now passable.");
         }
     }
 }

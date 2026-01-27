@@ -203,6 +203,11 @@ MonoBehaviour:
   - {fileID: 11400000, guid: a22b57f88c6a80a4cbf5a83f4958531d, type: 2}
   WallTiles:
   - {fileID: 11400000, guid: 0d69b63b162df2c43ab316015e1ee06b, type: 2}
+  WallPrefab: {fileID: 2033263167994002411, guid: 49d6b47eaf729a442b5ddd6ac9a2594d, type: 3}
+  minWalls: 3
+  maxWalls: 7
+  FoodPrefab: {fileID: 132116332593176058, guid: c6d17b64748ac294c879dab2187c7159, type: 3}
+  foodCount: 5
   mainCamera: {fileID: 519420031}
   padding: 1
   boardOffset: {x: -5, y: -5}
@@ -2257,7 +2262,7 @@ MonoBehaviour:
   spawnPlayerOnStart: 1
   playerSpawnCell: {x: 1, y: 1}
   startingFood: 100
-  foodPerTurn: 10
+  foodPerTurn: 1
   foodConsumptionRate: 5
 --- !u!4 &1246860405
 Transform:
@@ -2342,17 +2347,17 @@ PrefabInstance:
       value: PlayerController
       objectReference: {fileID: 0}
     - target: {fileID: 6260697673181782317, guid: 602f5af0240376846873a52c9491db2d, type: 3}
+      propertyPath: moveSpeed
+      value: 5
+      objectReference: {fileID: 0}
+    - target: {fileID: 6260697673181782317, guid: 602f5af0240376846873a52c9491db2d, type: 3}
+      propertyPath: turnManager
+      value: 
+      objectReference: {fileID: 41264156}
+    - target: {fileID: 6260697673181782317, guid: 602f5af0240376846873a52c9491db2d, type: 3}
       propertyPath: boardManager
       value: 
       objectReference: {fileID: 276705601}
-    - target: {fileID: 6260697673181782317, guid: 602f5af0240376846873a52c9491db2d, type: 3}
-      propertyPath: respawnAtStart
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 6260697673181782317, guid: 602f5af0240376846873a52c9491db2d, type: 3}
-      propertyPath: useRandomSpawn
-      value: 0
-      objectReference: {fileID: 0}
     - target: {fileID: 7811879752775130480, guid: 602f5af0240376846873a52c9491db2d, type: 3}
       propertyPath: m_LocalPosition.x
       value: -3.49
