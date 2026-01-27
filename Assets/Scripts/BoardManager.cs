@@ -37,7 +37,7 @@ public class BoardManager : MonoBehaviour
         GenerateBoard();
         GenerateWalls();
         GenerateFood();
-       // CenterCamera();
+    
     }
 
     void InitializeComponents()
@@ -65,6 +65,8 @@ public class BoardManager : MonoBehaviour
 
         if (mainCamera == null)
             mainCamera = Camera.main;
+
+       
     }
 
     void GenerateBoard()
@@ -108,11 +110,13 @@ public class BoardManager : MonoBehaviour
                 );
 
                 m_Tilemap.SetTile(tilePosition, tile);
-                
+
                 if (!m_BoardData[x, y].Passable)
                 {
                     m_Tilemap.SetColliderType(tilePosition, Tile.ColliderType.Grid);
                 }
+
+                
             }
         }
 
