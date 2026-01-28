@@ -1,44 +1,52 @@
 // GameManager.cs
 using UnityEngine;
-using UnityEngine.UIElements;
+using System.Collections.Generic;
+
+public enum GamePhase
+{
+    PlayerPhase,
+    EnemyPhase,
+    AllyPhase,
+    BattlePhase,
+    MenuPhase
+}
 
 public class GameManager : MonoBehaviour
 {
-    [Header("Game References")]
-    public BoardManager boardManager;
-    public PlayerController playerController;
-    public TurnManager turnManager;
-    
-    [Header("UI Toolkit References")]
-    public UIDocument uiDocument;
+    public static GameManager Instance { get; private set; }
     
     [Header("Game Settings")]
-    public bool spawnPlayerOnStart = true;
-    public Vector2Int playerSpawnCell = new Vector2Int(1, 1);
+    public int maxPartySize = 10;
+    public int maxTurnTime = 60;
+    public bool permadeath = true;
     
-   // In GameManager Inspector:
-    [Header("Resource Settings")]
-    public int startingFood = 50;    // Reduced from 100
-    public int foodPerTurn = 0;      // Reduced from 10
-    public int foodConsumptionRate = 5; // Keep at 5
+    [Header("References")]
+    public MapManager mapManager;
+    public UIManager uiManager;
+    public CameraController cameraController;
+    public GameObject playerCharacterPrefab;
     
-    // Private integer member that stores how much food you currently have
-    private int currentFood;
+    [Header("Player Data")]
+    public List<Character> playerCharacters = new List<Character>();
+    public List<Character> enemyCharacters = new List<Character>();
+    public List<Character> allyCharacters = new List<Character>();
     
-    // Private variable of type Label to store reference to the Label
-    private Label foodLabel;
+    [Header("Game State")]
+    public GamePhase currentPhase = GamePhase.PlayerPhase;
+    public int currentTurn = 1;
+    public Character selectedCharacter;
+    public Vector2Int selectedTile;
     
-    // Event for food changes
-    public event System.Action<int> OnFoodChanged;
-    
-    // Singleton pattern
-    public static GameManager Instance { get; private set; }
+    private Character currentActiveCharacter;
+    private bool isGameOver = false;
+    private bool isPaused = false;
     
     void Awake()
     {
         if (Instance == null)
         {
             Instance = this;
+            DontDestroyOnLoad(gameObject);
         }
         else
         {
@@ -49,368 +57,374 @@ public class GameManager : MonoBehaviour
     void Start()
     {
         InitializeGame();
-        InitializeUI();
+        StartPlayerPhase();
+
+         // Auto-find if not assigned
+        if (mapManager == null) mapManager = FindFirstObjectByType<MapManager>();
+        if (uiManager == null) uiManager = FindFirstObjectByType<UIManager>();
+        if (cameraController == null) cameraController = FindFirstObjectByType<CameraController>();
+    
+    InitializeGame();
     }
     
     void InitializeGame()
     {
-        // Initialize food
-        currentFood = startingFood;
-        Debug.Log($"GameManager: Initialized with {currentFood} food");
+        // Load map
+        mapManager.GenerateMap();
         
-        // Find references if not assigned
-        if (boardManager == null)
-            boardManager = FindFirstObjectByType<BoardManager>();
+        // Spawn characters
+        SpawnCharacters();
         
-        if (playerController == null)
-            playerController = FindFirstObjectByType<PlayerController>();
+        // Initialize UI
+        uiManager.InitializeUI();
+
+        // Set up camera
+        cameraController.SetBounds(mapManager.GetMapBounds());
         
-        if (turnManager == null)
-            turnManager = FindFirstObjectByType<TurnManager>();
+       
+    }
+    
+    void SpawnCharacters()
+    {
+        // Example spawn positions
+        playerCharacters = CreatePlayerCharacters();
+        enemyCharacters = CreateEnemyUnits();
         
-        // Find UIDocument if not assigned
-        if (uiDocument == null)
+        // Place on map
+        PlaceCharactersOnMap();
+    }
+
+    List<Character> CreatePlayerCharacters()
+    {
+        List<Character> players = new List<Character>();
+        players.Add(CreatePlayerCharacter("Eirika", CharacterClass.Lord));
+        players.Add(CreatePlayerCharacter("Seth", CharacterClass.Mercenary));
+        players.Add(CreatePlayerCharacter("Vanessa", CharacterClass.Archer));
+        return players;
+    }
+
+    Character CreatePlayerCharacter(string name, CharacterClass characterClass)
+    {
+        GameObject playerObj = Instantiate(playerCharacterPrefab);
+        Character character = playerObj.GetComponent<Character>();
+        character.characterName = name;
+        character.characterClass = characterClass;
+
+        // Assign weapon based on class
+        switch (characterClass)
         {
-            uiDocument = FindFirstObjectByType<UIDocument>();
-            if (uiDocument == null)
+            case CharacterClass.Lord:
+            case CharacterClass.Mercenary:
+                character.equippedWeapon = GetWeaponFromDatabase("iron_sword");
+                break;
+
+            case CharacterClass.Mage:
+                character.equippedWeapon = GetWeaponFromDatabase("fire_tome");
+                break;
+
+            case CharacterClass.Archer:
+                character.equippedWeapon = GetWeaponFromDatabase("iron_bow");
+                break;
+
+            default:
+                character.equippedWeapon = GetWeaponFromDatabase("iron_sword");
+                break;
+        }
+
+        return character;
+    }
+
+        WeaponData GetWeaponFromDatabase(string weaponID)
+    {
+        if (WeaponDatabase.Instance != null)
+        {
+            return WeaponDatabase.Instance.GetWeapon(weaponID);
+        }
+        
+        // Fallback: Load from Resources
+        return Resources.Load<WeaponData>($"Weapons/{weaponID}");
+    }
+
+
+    List<Character> CreateEnemyUnits()
+    {
+        List<Character> enemies = new List<Character>();
+        
+        for (int i = 0; i < 5; i++)
+        {
+            GameObject enemyObj = new GameObject($"Enemy {i+1}");
+            Character soldier = enemyObj.AddComponent<Character>();
+            soldier.characterName = $"Enemy {i+1}";
+            soldier.characterClass = CharacterClass.Soldier;
+            soldier.SetStats(new CharacterStats(22, 10, 3, 7, 4, 5, 9, 2));
+            soldier.equippedWeapon = GetWeaponFromDatabase("iron_lance");
+            enemies.Add(soldier);
+        }
+        
+        return enemies;
+    }
+    
+    void PlaceCharactersOnMap()
+    {
+        // Place player characters
+        for (int i = 0; i < playerCharacters.Count; i++)
+        {
+            Vector2Int position = new Vector2Int(2 + i, 2);
+            mapManager.PlaceCharacter(playerCharacters[i], position, Team.Player);
+        }
+        
+        // Place enemy characters
+        for (int i = 0; i < enemyCharacters.Count; i++)
+        {
+            Vector2Int position = new Vector2Int(8 + i, 8);
+            mapManager.PlaceCharacter(enemyCharacters[i], position, Team.Enemy);
+        }
+    }
+    
+    void StartPlayerPhase()
+    {
+        currentPhase = GamePhase.PlayerPhase;
+        uiManager.ShowPhaseText("Player Phase");
+        
+        // Reset all player characters' actions
+        foreach (Character character in playerCharacters)
+        {
+            character.ResetActions();
+        }
+        
+        // Select first character
+        SelectCharacter(playerCharacters[0]);
+    }
+    
+    void StartEnemyPhase()
+    {
+        currentPhase = GamePhase.EnemyPhase;
+        uiManager.ShowPhaseText("Enemy Phase");
+        
+        StartCoroutine(ExecuteEnemyTurns());
+    }
+    
+    System.Collections.IEnumerator ExecuteEnemyTurns()
+    {
+        foreach (Character enemy in enemyCharacters)
+        {
+            if (enemy.IsAlive())
             {
-                Debug.LogWarning("GameManager: No UIDocument found in scene. Food UI will not be displayed.");
+                currentActiveCharacter = enemy;
+                cameraController.FocusOnCharacter(enemy);
+                
+                // AI decision making
+                yield return StartCoroutine(AIManager.MakeDecision(enemy));
+                
+                yield return new WaitForSeconds(0.5f);
             }
         }
         
-        // Make sure player has reference to board manager
-        if (playerController != null && playerController.boardManager == null && boardManager != null)
+        EndEnemyPhase();
+    }
+    
+    void EndEnemyPhase()
+    {
+        currentTurn++;
+        StartPlayerPhase();
+    }
+    
+    public void SelectCharacter(Character character)
+    {
+        if (selectedCharacter != null)
         {
-            playerController.boardManager = boardManager;
+            selectedCharacter.Deselect();
         }
         
-        // Make sure player has reference to turn manager
-        if (playerController != null && playerController.turnManager == null && turnManager != null)
+        selectedCharacter = character;
+        selectedCharacter.Select();
+        
+        // Show movement range
+        mapManager.ShowMovementRange(character);
+        
+        // Update UI
+        uiManager.UpdateCharacterInfo(character);
+        
+        // Move camera
+        cameraController.FocusOnCharacter(character);
+    }
+    
+    public void SelectTile(Vector2Int tilePosition)
+    {
+        selectedTile = tilePosition;
+        
+        if (selectedCharacter != null && 
+            selectedCharacter.CanMoveTo(tilePosition) && 
+            !selectedCharacter.hasMoved)
         {
-            playerController.turnManager = turnManager;
+            // Move character
+            mapManager.MoveCharacter(selectedCharacter, tilePosition);
+            selectedCharacter.hasMoved = true;
+            
+            // Show attack range
+            mapManager.ShowAttackRange(selectedCharacter);
+        }
+        else if (selectedCharacter != null && 
+                 selectedCharacter.CanAttackAt(tilePosition) && 
+                 !selectedCharacter.hasAttacked)
+        {
+            // Check if enemy is at tile
+            Character target = mapManager.GetCharacterAt(tilePosition);
+            if (target != null && target.team != selectedCharacter.team)
+            {
+                StartBattle(selectedCharacter, target);
+            }
+        }
+    }
+    
+    public void StartBattle(Character attacker, Character defender)
+    {
+        currentPhase = GamePhase.BattlePhase;
+        
+        // Calculate battle
+        BattleResult result = CombatSystem.CalculateBattle(attacker, defender);
+        
+        // Show battle animation
+        uiManager.ShowBattleAnimation(attacker, defender, result);
+        
+        // Apply results
+        ApplyBattleResult(result);
+        
+        // Check if defender died
+        if (!defender.IsAlive())
+        {
+            mapManager.RemoveCharacter(defender);
+            
+            if (defender.team == Team.Enemy)
+            {
+                enemyCharacters.Remove(defender);
+            }
         }
         
-        // Register the OnTurnHappen method to TurnManager.OnTick callback
-        if (turnManager != null)
+        attacker.hasAttacked = true;
+        
+        // Return to appropriate phase
+        currentPhase = GamePhase.PlayerPhase;
+    }
+    
+    void ApplyBattleResult(BattleResult result)
+    {
+        result.attacker.currentHP -= result.damageToAttacker;
+        result.defender.currentHP -= result.damageToDefender;
+        
+        // Gain experience
+        if (result.damageToDefender > 0)
         {
-            turnManager.OnTick += OnTurnHappen;
-            Debug.Log("GameManager: Registered OnTurnHappen to TurnManager.OnTick");
+            result.attacker.GainExperience(10);
+        }
+    }
+    
+    public void EndCharacterTurn()
+    {
+        selectedCharacter.EndTurn();
+        
+        // Find next character that can act
+        Character nextCharacter = FindNextActiveCharacter();
+        
+        if (nextCharacter != null)
+        {
+            SelectCharacter(nextCharacter);
         }
         else
         {
-            Debug.LogError("GameManager: TurnManager not found! Cannot register OnTurnHappen");
+            // All characters have acted, end phase
+            StartEnemyPhase();
         }
-        
-        // Only spawn if everything is ready
-        if (boardManager != null && playerController != null && playerController.boardManager != null)
-        {
-            playerController.spawnPosition = playerSpawnCell;
-            playerController.Respawn();
-        }
-        else
-        {
-            Debug.LogError("Cannot spawn player - missing references!");
-        }
-        
-        // Update UI with initial food value
-        UpdateFoodUI();
     }
     
-    /// <summary>
-    /// Initializes the UI Toolkit elements
-    /// </summary>
-    void InitializeUI()
+    Character FindNextActiveCharacter()
     {
-        if (uiDocument == null)
+        foreach (Character character in playerCharacters)
         {
-            Debug.LogError("GameManager: UIDocument is not assigned!");
-            return;
-        }
-        
-        // Get the root VisualElement
-        VisualElement root = uiDocument.rootVisualElement;
-        
-        // Try to find the food label by name
-        foodLabel = root.Q<Label>("food-label");
-        
-        // If not found by name, try to find by class
-        if (foodLabel == null)
-        {
-            foodLabel = root.Q<Label>(className: "food-label");
-        }
-        
-        // If still not found, try to find any label and check its name
-        if (foodLabel == null)
-        {
-            var allLabels = root.Query<Label>().ToList();
-            foreach (var label in allLabels)
+            if (character.IsAlive() && !character.hasActed)
             {
-                if (label.name == "food-label" || label.ClassListContains("food-label"))
-                {
-                    foodLabel = label;
-                    break;
-                }
+                return character;
+            }
+        }
+        return null;
+    }
+    
+    public bool CheckGameOver()
+    {
+        // Check if all player characters are dead
+        bool allPlayersDead = true;
+        foreach (Character character in playerCharacters)
+        {
+            if (character.IsAlive())
+            {
+                allPlayersDead = false;
+                break;
             }
         }
         
-        // Create the label if it doesn't exist
-        if (foodLabel == null)
+        // Check if all enemies are dead
+        bool allEnemiesDead = true;
+        foreach (Character character in enemyCharacters)
         {
-            Debug.LogWarning("GameManager: Food label not found in UI. Creating one...");
-            CreateFoodLabel(root);
-        }
-        
-        // Subscribe to food change event for UI updates
-        OnFoodChanged += UpdateFoodLabel;
-        
-        // Set initial food value
-        UpdateFoodLabel(currentFood);
-    }
-    
-    /// <summary>
-    /// Creates a food label if one doesn't exist in the UI
-    /// </summary>
-    void CreateFoodLabel(VisualElement root)
-    {
-        foodLabel = new Label();
-        foodLabel.name = "food-label";
-        foodLabel.AddToClassList("food-label");
-        foodLabel.text = $"Food: {currentFood}";
-        foodLabel.style.fontSize = 20;
-        foodLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-        foodLabel.style.color = Color.white;
-        
-        // Add to root
-        root.Add(foodLabel);
-    }
-    
-    void OnDestroy()
-    {
-        // Unregister from events to prevent memory leaks
-        if (turnManager != null)
-        {
-            turnManager.OnTick -= OnTurnHappen;
-        }
-        
-        // Unsubscribe from food change event
-        OnFoodChanged -= UpdateFoodLabel;
-    }
-    
-    /// <summary>
-    /// Method that will be called when a turn happens (registered to TurnManager.OnTick)
-    /// </summary>
-    void OnTurnHappen()
-    {
-        Debug.Log("GameManager: OnTurnHappen called");
-        
-        // Update food resources
-        UpdateFood();
-    }
-    
-    /// <summary>
-    /// Updates food resources each turn
-    /// </summary>
-    void UpdateFood()
-    {
-        int oldFood = currentFood;
-        
-        // Add food per turn (like harvesting)
-        currentFood += foodPerTurn;
-        
-        // Consume food (like feeding units)
-        currentFood -= foodConsumptionRate;
-        
-        // Clamp food to not go negative
-        currentFood = Mathf.Max(0, currentFood);
-        
-        Debug.Log($"GameManager: Food updated. Current: {currentFood} (+{foodPerTurn}, -{foodConsumptionRate})");
-        
-        // Trigger food change event
-        if (oldFood != currentFood)
-        {
-            OnFoodChanged?.Invoke(currentFood);
-        }
-        
-        // Check if food is critically low
-        if (currentFood <= 20)
-        {
-            Debug.LogWarning($"Warning: Food supply is critically low! ({currentFood})");
-            
-            // Update label color for warning
-            if (foodLabel != null)
+            if (character.IsAlive())
             {
-                if (currentFood <= 10)
-                    foodLabel.style.color = Color.red;
-                else
-                    foodLabel.style.color = Color.yellow;
-            }
-            
-            if (currentFood <= 0)
-            {
-                OnFoodDepleted();
+                allEnemiesDead = false;
+                break;
             }
         }
-        else if (foodLabel != null)
-        {
-            // Reset to normal color if food is sufficient
-            foodLabel.style.color = Color.white;
-        }
-    }
-    
-    /// <summary>
-    /// Updates the food label text
-    /// </summary>
-    void UpdateFoodLabel(int foodAmount)
-    {
-        if (foodLabel != null)
-        {
-            foodLabel.text = $"Food: {foodAmount}";
-        }
-        else
-        {
-            Debug.LogWarning("GameManager: Food label is null! Cannot update UI.");
-        }
-    }
-    
-    /// <summary>
-    /// Updates the food display in the UI (legacy method, kept for compatibility)
-    /// </summary>
-    void UpdateFoodUI()
-    {
-        OnFoodChanged?.Invoke(currentFood);
-    }
-    
-    /// <summary>
-    /// Called when player runs out of food
-    /// </summary>
-    void OnFoodDepleted()
-    {
-        Debug.LogError("GameManager: Food depleted! Game over condition triggered.");
         
-        // Update label to show game over
-        if (foodLabel != null)
+        if (allPlayersDead)
         {
-            foodLabel.text = "GAME OVER - No Food!";
-            foodLabel.style.color = Color.red;
-            foodLabel.style.fontSize = 24;
+            GameOver(false);
+            return true;
         }
-        
-        Debug.Log("Game Over! Restarting game...");
-        Invoke(nameof(RestartGame), 2f);
-    }
-    
-    /// <summary>
-    /// Adds food to the player's resources
-    /// </summary>
-    public void AddFood(int amount)
-    {
-        int oldFood = currentFood;
-        currentFood += amount;
-        Debug.Log($"Added {amount} food. Total: {currentFood}");
-        
-        if (oldFood != currentFood)
+        else if (allEnemiesDead)
         {
-            OnFoodChanged?.Invoke(currentFood);
-        }
-    }
-    
-    /// <summary>
-    /// Consumes food from the player's resources - FIXED VERSION
-    /// </summary>
-    public bool ConsumeFood(int amount)
-    {
-        // FIXED: Check if we have enough food BEFORE consuming
-        if (currentFood >= amount)
-        {
-            int oldFood = currentFood;
-            currentFood -= amount;
-            Debug.Log($"Consumed {amount} food. Remaining: {currentFood}");
-            
-            if (oldFood != currentFood)
-            {
-                OnFoodChanged?.Invoke(currentFood);
-            }
+            GameOver(true);
             return true;
         }
         
-        Debug.LogWarning($"Not enough food to consume {amount}. Current: {currentFood}");
         return false;
     }
-    
-    /// <summary>
-    /// Gets the current amount of food
-    /// </summary>
-    public int GetCurrentFood()
+
+    void GameOver(bool victory)
     {
-        return currentFood;
+        isGameOver = true;
+        uiManager.ShowGameOverScreen(victory);
     }
-    
-    /// <summary>
-    /// Sets the current amount of food
-    /// </summary>
-    public void SetCurrentFood(int amount)
-    {
-        int oldFood = currentFood;
-        currentFood = Mathf.Max(0, amount);
-        
-        if (oldFood != currentFood)
-        {
-            OnFoodChanged?.Invoke(currentFood);
-        }
-    }
-    
-    /// <summary>
-    /// Checks if there's enough food for a certain action
-    /// </summary>
-    public bool HasEnoughFood(int amount)
-    {
-        return currentFood >= amount;
-    }
-    
+
+    // Add these missing methods
     public void RestartGame()
     {
-        Debug.Log("GameManager: Restarting game...");
-        
-        // Reset food
-        currentFood = startingFood;
-        
-        // Reset turn manager
-        if (turnManager != null)
-            turnManager.ResetTurns();
-        
-        // Respawn player
-        if (playerController != null)
-            playerController.Respawn();
-        
-        // Update UI
-        if (foodLabel != null)
+        Debug.Log("Restarting game...");
+
+        // Reset game state
+        isGameOver = false;
+        currentTurn = 1;
+        currentPhase = GamePhase.PlayerPhase;
+
+        // Clear characters
+        playerCharacters.Clear();
+        enemyCharacters.Clear();
+        allyCharacters.Clear();
+
+        // Destroy existing character objects
+        foreach (Character character in FindObjectsByType<Character>(FindObjectsSortMode.None))
         {
-            foodLabel.text = $"Food: {currentFood}";
-            foodLabel.style.color = Color.white;
-            foodLabel.style.fontSize = 20;
+            Destroy(character.gameObject);
         }
-        
-        Debug.Log("Game restarted!");
+
+        // Reinitialize game
+        InitializeGame();
+        StartPlayerPhase();
     }
     
-    void Update()
+    public void QuitGame()
     {
-        // Example: Restart game with R key
-        if (Input.GetKeyDown(KeyCode.R))
-        {
-            RestartGame();
-        }
-        
-        // Example: Add food with F key (for testing)
-        if (Input.GetKeyDown(KeyCode.F))
-        {
-            AddFood(50);
-        }
-        
-        // Example: Consume food with C key (for testing)
-        if (Input.GetKeyDown(KeyCode.C))
-        {
-            ConsumeFood(30);
-        }
+        #if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+        #else
+            Application.Quit();
+        #endif
     }
 }

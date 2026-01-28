@@ -5,11 +5,15 @@ TagManager:
   serializedVersion: 3
   tags:
   - Wall
+  - DangerousTile
+  - LargeTile
+  - LevelChanger
+  - Enemy
   layers:
   - Default
   - TransparentFX
   - Ignore Raycast
-  - 
+  - Characters
   - Water
   - UI
   - 
